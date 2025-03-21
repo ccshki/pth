@@ -632,36 +632,10 @@
         
         <!-- 選擇與輸入界面 (簡化版) -->
         <div id="input-screen" class="mb-8">
-            <!-- 步驟 1: 檢查權限 -->
+            <!-- 步驟 1: 選擇模式 -->
             <div class="mb-4">
                 <div class="flex items-center mb-2">
                     <div class="bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold mr-2">1</div>
-                    <h2 class="text-base font-semibold">檢查權限</h2>
-                </div>
-                <div class="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 mb-1 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
-                    <div class="flex-1">
-                        <p class="text-sm text-gray-700 dark:text-gray-300">
-                            練習前需先檢查權限。提示時請選擇「<span class="font-bold text-primary dark:text-primary">允許全部</span>」
-                        </p>
-                    </div>
-                    <div class="flex items-center">
-                        <button id="check-permissions" class="bg-primary hover:bg-primary/90 text-white py-2 px-4 rounded-lg text-sm flex items-center whitespace-nowrap transition-all duration-200 shadow-sm hover:shadow">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812z" clip-rule="evenodd" />
-                            </svg>
-                            檢查權限
-                        </button>
-                        <div id="permission-status" class="ml-2 hidden">
-                            <!-- 狀態將在這裡顯示 -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- 步驟 2: 選擇模式 -->
-            <div class="mb-4">
-                <div class="flex items-center mb-2">
-                    <div class="bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold mr-2">2</div>
                     <h2 class="text-base font-semibold">選擇練習模式</h2>
                 </div>
                 <div class="border-b border-gray-200 dark:border-gray-700 mb-2">
@@ -680,11 +654,11 @@
                 </div>
             </div>
             
-            <!-- 步驟 3: 準備練習內容 -->
+            <!-- 步驟 2: 準備練習內容 -->
             <div class="mb-4">
                 <div class="flex items-center justify-between mb-2">
                     <div class="flex items-center">
-                        <div class="bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold mr-2">3</div>
+                        <div class="bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold mr-2">2</div>
                         <h2 class="text-base font-semibold">準備練習內容</h2>
                     </div>
                     <a href="https://docs.google.com/document/d/14_JuWJ0Bu-pLm0WgSKkHXWToSIwkrZxDg4DWBXzcpNU/edit?usp=sharing" 
@@ -785,9 +759,9 @@
                 </div>
             </details>
             
-            <!-- 步驟 4: 開始練習 -->
+            <!-- 步驟 3: 開始練習 -->
             <div class="flex items-center mb-4">
-                <div class="bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold mr-2">4</div>
+                <div class="bg-primary text-white w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold mr-2">3</div>
                 <h2 class="text-base font-semibold">開始練習</h2>
             </div>
             <button id="start-practice" class="w-full py-3.5 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 text-lg flex items-center justify-center" disabled>
@@ -981,7 +955,7 @@
         </div>
         
         <!-- 隱藏的iframe用於觸發權限檢查 -->
-        <iframe id="permission-check-frame" style="display:none;"></iframe>
+
     </div>
 
     <script>
@@ -998,71 +972,8 @@
             }
         });
         
-        // 權限狀態和檢查功能
-        let permissionGranted = false;
-        
-        // 核心模組: 權限管理
-        const PermissionManager = {
-            // 檢查權限狀態
-            checkPermission() {
-                const permissionStatusDiv = document.getElementById('permission-status');
-                const checkButton = document.getElementById('check-permissions');
-                const startButton = document.getElementById('start-practice');
-                
-                checkButton.disabled = true;
-                permissionStatusDiv.classList.remove('hidden');
-                permissionStatusDiv.innerHTML = `
-                    <div class="flex items-center text-blue-600 dark:text-blue-400">
-                        <div class="loading-spinner mr-2"></div>
-                        <span>正在檢查權限...</span>
-                    </div>
-                `;
-                
-                // 使用隱藏的iframe來觸發權限檢查
-                setTimeout(() => {
-                    try {
-                        // 生成一個唯一的時間戳，以防止緩存
-                        const timestamp = new Date().getTime();
-                        // 使用 Google 表單網址作為目標
-                        const checkUrl = `https://docs.google.com/forms/d/e/1FAIpQLSfTynTpwcAlthtCLtxnjrxTRtS0f5phUlgido48wtc-XhTSSg/viewform?t=${timestamp}`;
-                        document.getElementById('permission-check-frame').src = checkUrl;
-                        
-                        // 如果5秒後還沒有錯誤，假定權限已授予
-                        setTimeout(() => {
-                            if (!permissionGranted) {
-                                permissionGranted = true;
-                                permissionStatusDiv.innerHTML = `
-                                    <div class="flex items-center text-green-600 dark:text-green-400">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                                        </svg>
-                                        <span>權限檢查完成！您可以開始練習了。</span>
-                                    </div>
-                                `;
-                                checkButton.disabled = false;
-                                
-                                // 如果拼音引擎已加載，啟用開始按鈕
-                                if (DataManager.isPinyinProLoaded) {
-                                    startButton.disabled = false;
-                                }
-                            }
-                        }, 5000);
-                        
-                    } catch (error) {
-                        console.error('權限檢查時出錯:', error);
-                        permissionStatusDiv.innerHTML = `
-                            <div class="flex items-center text-red-600 dark:text-red-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                                </svg>
-                                <span>權限檢查失敗，請重試。</span>
-                            </div>
-                        `;
-                        checkButton.disabled = false;
-                    }
-                }, 500);
-            }
-        };
+        // 直接設置權限為已授予，不需檢查
+        let permissionGranted = true;
         
         // 核心模組: 資料管理
         const DataManager = {
@@ -2575,8 +2486,7 @@
                 // 初始化數據管理器
                 DataManager.init();
                 
-                // 綁定檢查權限按鈕事件
-                document.getElementById('check-permissions').addEventListener('click', PermissionManager.checkPermission);
+                // 移除檢查權限按鈕事件，因為已經移除了權限檢查
                 
                 // 綁定按鈕事件
                 document.getElementById('vocabulary-mode-btn').addEventListener('click', () => this.setMode('vocabulary'));
@@ -2771,12 +2681,6 @@
                 // 檢查 Pinyin Pro 是否已加載
                 if (!DataManager.isPinyinProLoaded) {
                     alert('Pinyin Pro 拼音引擎尚未加載完成，請稍後再試');
-                    return;
-                }
-                
-                // 檢查權限是否已授予
-                if (!permissionGranted) {
-                    alert('請先完成權限檢查！點擊「檢查權限」按鈕，然後選擇「允許全部」。');
                     return;
                 }
                 
@@ -3067,7 +2971,8 @@
                                 
                                 if (isHint) {
                                     hintCharCount++; // 增加提示字符數
-                                } else if (word.pinyins[charIndex] && !word.skipped) {
+                                } else if (word.pinyins[charIndex]) {
+                                    // 只要有拼音輸入且非提示，就算作完成（不考慮整個詞是否被跳過）
                                     validCompleteCount++; // 增加有效完成數
                                 }
                             }
