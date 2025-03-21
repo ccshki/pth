@@ -866,6 +866,10 @@
                 </button>
                 
                 <div class="flex gap-2">
+                    <!-- 直接提交按鈕 - 新增 -->
+                    <button id="submit-directly" onclick="GameLogic.submitCurrentProgress()" class="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm hover:shadow">
+                        直接提交
+                    </button>
                     <!-- 顯示答案按鈕 -->
                     <button id="show-answer" class="bg-yellow-500 hover:bg-yellow-600 text-white font-medium py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm hover:shadow">
                         顯示答案
@@ -873,9 +877,6 @@
                     <!-- 跳過按鈕 -->
                     <button id="skip-item" class="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-medium py-2.5 px-4 rounded-lg transition-all duration-200 shadow-sm hover:shadow">
                         跳過
-                    </button>
-                    <button id="next-word" class="bg-primary hover:bg-primary/90 text-white font-bold py-2.5 px-6 rounded-lg transition-all duration-200 shadow-sm hover:shadow hidden">
-                        下一個
                     </button>
                 </div>
             </div>
@@ -1526,12 +1527,20 @@
                 // 清空並創建拼音輸入框
                 this.practiceViews.pinyinInputs.innerHTML = '';
                 
+                // 追踪第一個漢字的容器引用
+                let firstCharContainer = null;
+                
                 wordData.characters.forEach((char, index) => {
                     if (!DataManager.isChineseCharacter(char)) return; // 跳過非漢字
                     
                     // 創建字符容器
                     const charContainer = document.createElement('div');
                     charContainer.className = 'char-container';
+                    
+                    // 如果這是第一個漢字，保存引用
+                    if (firstCharContainer === null) {
+                        firstCharContainer = charContainer;
+                    }
                     
                     // 創建漢字顯示
                     const charDisplay = document.createElement('div');
@@ -1644,13 +1653,35 @@
                 // 隱藏下一步按鈕，直到全部答對或跳過
                 this.practiceViews.nextButton.classList.add('hidden');
                 
-                // 自動點擊第一個漢字
-                setTimeout(() => {
-                    const firstChar = document.querySelector('.char-display');
-                    if (firstChar) {
-                        firstChar.click();
+                // 直接修改CSS，使得所有char-container都顯示輸入框，無需點擊
+                const cssOverride = document.createElement('style');
+                cssOverride.textContent = `
+                    /* 重要：強制所有詞彙的輸入框都顯示，無需點擊激活 */
+                    .char-container .vocab-input-container {
+                        opacity: 1 !important;
+                        pointer-events: auto !important;
                     }
-                }, 300);
+                `;
+                document.head.appendChild(cssOverride);
+                
+                // 聚焦在第一個輸入框
+                if (firstCharContainer) {
+                    // 為了視覺反饋，仍然給第一個字添加active-char類
+                    firstCharContainer.classList.add('active-char');
+                    
+                    // 聚焦第一個輸入框
+                    const input = firstCharContainer.querySelector('.pinyin-input');
+                    if (input) {
+                        setTimeout(() => {
+                            try {
+                                input.focus();
+                                console.log('已聚焦在第一個輸入框');
+                            } catch (e) {
+                                console.error('聚焦輸入框時出錯:', e);
+                            }
+                        }, 100);
+                    }
+                }
             },
             
             // 顯示文章練習
@@ -1837,6 +1868,13 @@
                     // 播放錯誤音效
                     SoundManager.playIncorrectSound();
                     
+                    // 錯誤後自動清空輸入框
+                    setTimeout(() => {
+                        input.value = '';
+                        input.focus();
+                        input.classList.remove("incorrect");
+                    }, 300); // 等待一小段時間後清空，讓用戶有時間看到錯誤反饋
+                    
                     // 重置連擊數
                     ComboManager.reset();
                 }
@@ -1891,9 +1929,13 @@
                 });
                 
                 if (allCorrect && inputs.length > 0) {
-                    // 全部正確，顯示下一步按鈕
-                    this.practiceViews.nextButton.classList.remove('hidden');
+                    // 全部正確，自動跳至下一詞
                     this.showFeedback('太棒了！全部正確！', 'success');
+                    
+                    // 延遲一下自動前往下一個詞彙
+                    setTimeout(() => {
+                        GameLogic.nextWord();
+                    }, 500);
                 }
             },
             
@@ -1949,6 +1991,13 @@
                     // 播放錯誤音效
                     SoundManager.playIncorrectSound();
                     
+                    // 錯誤後自動清空輸入框
+                    setTimeout(() => {
+                        input.value = '';
+                        input.focus();
+                        input.classList.remove("incorrect");
+                    }, 300); // 等待一小段時間後清空，讓用戶有時間看到錯誤反饋
+                    
                     // 重置連擊數
                     ComboManager.reset();
                 }
@@ -1996,9 +2045,13 @@
                     }
                 });
                 
-                // 顯示下一步按鈕
-                this.practiceViews.nextButton.classList.remove('hidden');
+                // 顯示跳過反饋
                 this.showFeedback('已跳過當前詞彙', 'info');
+                
+                // 自動前往下一個詞彙
+                setTimeout(() => {
+                    GameLogic.nextWord();
+                }, 300);
             },
             
             // 跳過當前文章字符
@@ -2122,9 +2175,22 @@
                 this.completionElements.totalCount.textContent = stats.totalItems;
                 
                 // 計算用時
-                const minutes = Math.floor(stats.timeSpent / 60);
-                const seconds = Math.floor(stats.timeSpent % 60);
-                this.completionElements.timeSpent.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                let minutes = 0;
+                let seconds = 0;
+                if (typeof stats.timeSpent === 'number' && !isNaN(stats.timeSpent)) {
+                    console.log('時間格式化: ' + stats.timeSpent + ' 秒');
+                    minutes = Math.floor(stats.timeSpent / 60);
+                    seconds = Math.floor(stats.timeSpent % 60);
+                } else {
+                    console.log('無效的時間值: ', stats.timeSpent);
+                    // 默認顯示1秒鐘
+                    seconds = 1;
+                }
+                
+                // 格式化時間字符串 (確保秒數總是兩位數)
+                const timeString = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                console.log('格式化的時間字符串: ' + timeString);
+                this.completionElements.timeSpent.textContent = timeString;
                 
                 // 顯示跳過信息
                 if (stats.skippedCount > 0) {
@@ -2439,6 +2505,47 @@
 
         // 核心模組: 遊戲邏輯
         const GameLogic = {
+            // 直接提交當前進度
+            submitCurrentProgress() {
+                // 直接提交，不顯示確認對話框
+                // 在某些環境下confirm對話框可能無法正常工作，直接跳過此步驟
+                // const confirmSubmit = confirm('確定要提交目前的進度嗎？未完成的部分將被標記為跳過。');
+                // if (!confirmSubmit) return;
+                
+                // 標記所有未完成項目為跳過
+                if (this.mode === 'vocabulary') {
+                    // 詞彙模式：標記當前未完成的詞彙和未處理的詞彙
+                    const currentInputs = document.querySelectorAll('.char-container');
+                    currentInputs.forEach(container => {
+                        if (!container.classList.contains('completed')) {
+                            container.classList.add('skipped');
+                        }
+                    });
+                    
+                    // 未處理的詞彙也標記為跳過
+                    for (let i = this.currentWordIndex; i < this.vocabularyList.length; i++) {
+                        this.vocabularyList[i].skipped = true;
+                        this.skippedCount++;
+                    }
+                } else {
+                    // 文章模式：標記所有未完成的字符為跳過
+                    const charSpans = document.querySelectorAll('.article-char');
+                    charSpans.forEach(span => {
+                        if (DataManager.isChineseCharacter(span.textContent) && 
+                            !span.classList.contains('completed')) {
+                            span.classList.add('skipped');
+                            span.classList.add('completed');
+                            
+                            const index = parseInt(span.dataset.index);
+                            this.currentArticle.skippedChars[index] = true;
+                            this.skippedCount++;
+                        }
+                    });
+                }
+                
+                // 完成練習並顯示結果
+                this.completeCurrentPractice();
+            },
             // 遊戲狀態
             mode: 'vocabulary', // vocabulary 或 article
             requireTones: true,
@@ -2476,11 +2583,15 @@
                 document.getElementById('article-mode-btn').addEventListener('click', () => this.setMode('article'));
                 document.getElementById('start-practice').addEventListener('click', () => this.startPractice());
                 document.getElementById('back-to-input').addEventListener('click', () => UIManager.showScreen('input'));
-                document.getElementById('next-word').addEventListener('click', () => this.nextWord());
+                // 移除下一個按鈕的事件監聽，因為按鈕已被移除
+                // document.getElementById('next-word').addEventListener('click', () => this.nextWord());
                 document.getElementById('skip-item').addEventListener('click', () => this.skipCurrentItem());
                 document.getElementById('practice-again').addEventListener('click', () => this.restartPractice());
                 document.getElementById('new-content').addEventListener('click', () => UIManager.showScreen('input'));
                 document.getElementById('show-answer').addEventListener('click', () => this.showAnswer());
+                document.getElementById('submit-directly').addEventListener('click', function() {
+                    GameLogic.submitCurrentProgress();
+                });
                 
                 // 學生身份相關監聽器
                 document.getElementById('student-class').addEventListener('change', handleStudentIdentityChange);
@@ -2655,6 +2766,8 @@
             
             // 開始練習
             startPractice() {
+                console.log('開始練習...');
+                
                 // 檢查 Pinyin Pro 是否已加載
                 if (!DataManager.isPinyinProLoaded) {
                     alert('Pinyin Pro 拼音引擎尚未加載完成，請稍後再試');
@@ -2670,6 +2783,17 @@
                 // 獲取用戶設置
                 this.requireTones = UIManager.inputs.requireTones.checked;
                 this.skippedCount = 0;
+                
+                // 重置提示計數
+                this.hintCount = 0;
+                
+                // 清空提示記錄
+                this.vocabularyHints = {};
+                this.articleHints = {};
+                
+                // 先記錄開始時間，確保計時正確
+                this.startTime = Date.now();
+                console.log('設置開始時間: ' + this.startTime);
                 
                 if (this.mode === 'vocabulary') {
                     // 獲取詞彙文本
@@ -2726,8 +2850,8 @@
                 // 更新進度
                 UIManager.updateProgress();
                 
-                // 記錄開始時間
-                this.startTime = Date.now();
+                // 確認開始時間已設置
+                console.log('練習開始，計時已開始 - 開始時間: ' + this.startTime);
             },
             
             // 下一個詞彙
@@ -2811,6 +2935,21 @@
                             
                             // 顯示提示
                             UIManager.showFeedback(`已顯示「${char}」的標準拼音: ${standardPinyin}`, 'info');
+                            
+                            // 自動跳到下一個字符
+                            // 獲取所有字符容器
+                            const allChars = Array.from(document.querySelectorAll('.char-container'));
+                            const currentIndex = allChars.indexOf(activeChar);
+                            
+                            // 找到下一個未完成的字符
+                            const nextChar = UIManager.findNextIncompleteChar(currentIndex, allChars);
+                            
+                            if (nextChar) {
+                                // 短暫延遲後跳轉，讓用戶看到當前的反饋
+                                setTimeout(() => {
+                                    nextChar.querySelector('.char-display').click();
+                                }, 300);
+                            }
                         } else {
                             UIManager.showFeedback(`無法獲取「${char}」的標準拼音`, 'error');
                         }
@@ -2877,8 +3016,27 @@
             
             // 完成當前練習
             completeCurrentPractice() {
-                // 計算練習用時
-                const timeSpent = (Date.now() - this.startTime) / 1000; // 轉換為秒
+                // 計算練習用時 - 確保用時計算是正確的
+                const currentTime = Date.now();
+                let timeSpent = 0;
+                
+                if (this.startTime > 0) {
+                    // 確保startTime比當前時間早，避免負值
+                    if (currentTime > this.startTime) {
+                        timeSpent = (currentTime - this.startTime) / 1000; // 轉換為秒
+                    } else {
+                        // 如果時間戳異常，直接使用1秒作為最小計時
+                        timeSpent = 1;
+                    }
+                    
+                    // 設定合理範圍 (最長2小時 = 7200秒)
+                    timeSpent = Math.min(timeSpent, 7200);
+                }
+                
+                console.log(`計算練習時間: ${timeSpent}秒`);
+                console.log(`開始時間: ${this.startTime}`);
+                console.log(`結束時間: ${currentTime}`);
+                console.log(`時間差: ${currentTime - this.startTime}毫秒`);
                 
                 // 播放完成音效
                 SoundManager.playCompletionSound();
