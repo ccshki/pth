@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>啟基學校（港島）網上拼音平台</title>
+    <title>拼音練習遊戲</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 Pinyin Pro 庫 -->
     <script src="https://unpkg.com/pinyin-pro@3.19.4/dist/index.js"></script>
@@ -324,6 +324,56 @@
             border: 1px solid #f56565;
         }
         
+        /* 提示樣式 */
+        .pinyin-input.has-hint {
+            background-color: rgba(243, 244, 246, 0.5);
+            position: relative;
+        }
+        
+        .dark .pinyin-input.has-hint {
+            background-color: rgba(75, 85, 99, 0.5);
+        }
+        
+        /* 提示保護動畫 */
+        .pinyin-input.protected-hint {
+            animation: protectedHintPulse 0.3s ease;
+        }
+        
+        @keyframes protectedHintPulse {
+            0% { background-color: rgba(254, 226, 226, 0.2); }
+            50% { background-color: rgba(254, 202, 202, 0.5); }
+            100% { background-color: rgba(254, 226, 226, 0.2); }
+        }
+        
+        /* 計分顯示樣式 */
+        #score-display {
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        #current-score {
+            transition: all 0.2s ease;
+        }
+
+        /* 分數動畫效果 */
+        @keyframes scoreFloat {
+            0% { opacity: 0; transform: translateY(0); }
+            20% { opacity: 1; }
+            80% { opacity: 1; }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
+
+        /* 成績報告樣式 */
+        .score-report {
+            font-family: 'Noto Sans TC', sans-serif;
+            transition: all 0.3s ease;
+        }
+
+        .score-report:hover {
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            transform: translateY(-2px);
+        }
+        
         /* 錯誤提示樣式 */
         .error-tip {
             position: absolute;
@@ -628,7 +678,7 @@
     </div>
     
     <div class="container mx-auto px-4 py-8 max-w-6xl">
-        <h1 class="text-3xl font-bold text-center mb-6">啟基學校（港島）網上拼音平台</h1>
+        <h1 class="text-3xl font-bold text-center mb-6">拼音練習遊戲</h1>
         
         <!-- 選擇與輸入界面 (簡化版) -->
         <div id="input-screen" class="mb-8">
@@ -975,6 +1025,375 @@
         // 直接設置權限為已授予，不需檢查
         let permissionGranted = true;
         
+        // 計分系統管理模組
+        const ScoreManager = {
+            // 分數組成部分
+            baseScore: 0,       // 基礎得分(最高600分)
+            timeScore: 0,       // 時間得分(最高200分)
+            skillScore: 0,      // 技巧得分(最高200分)
+            
+            // 扣分項目
+            penalties: {
+                skips: 0,           // 跳過扣分
+                showAnswers: 0,     // 顯示答案扣分
+                hintLevel1: 0,      // 一級提示扣分
+                hintLevel2: 0       // 二級提示扣分
+            },
+            
+            // 統計數據
+            stats: {
+                skipCount: 0,       // 跳過次數
+                showAnswerCount: 0, // 顯示答案次數
+                hintLevel1Count: 0, // 一級提示次數
+                hintLevel2Count: 0, // 二級提示次數
+                maxCombo: 0,        // 最高連擊數
+                errorCount: 0       // 錯誤次數
+            },
+            
+            // 分數歷史記錄(用於動畫)
+            scoreHistory: [],
+            
+            // 初始化計分系統
+            init() {
+                this.reset();
+                this.createScoreDisplay();
+            },
+            
+            // 重置所有分數
+            reset() {
+                this.baseScore = 0;
+                this.timeScore = 0;
+                this.skillScore = 0;
+                
+                this.penalties = {
+                    skips: 0,
+                    showAnswers: 0,
+                    hintLevel1: 0,
+                    hintLevel2: 0
+                };
+                
+                this.stats = {
+                    skipCount: 0,
+                    showAnswerCount: 0,
+                    hintLevel1Count: 0,
+                    hintLevel2Count: 0,
+                    maxCombo: 0,
+                    errorCount: 0
+                };
+                
+                this.scoreHistory = [];
+                this.updateScoreDisplay();
+            },
+            
+            // 計算當前總分
+            getTotalScore() {
+                const totalWithoutPenalties = this.baseScore + this.timeScore + this.skillScore;
+                const totalPenalties = this.penalties.skips + this.penalties.showAnswers + 
+                               this.penalties.hintLevel1 + this.penalties.hintLevel2;
+                
+                return Math.max(0, totalWithoutPenalties - totalPenalties);
+            },
+            
+            // 添加分數並顯示動畫
+            addScore(amount, category) {
+                let newAmount = amount;
+                switch(category) {
+                    case 'base':
+                        this.baseScore += amount;
+                        break;
+                    case 'time':
+                        this.timeScore += amount;
+                        break;
+                    case 'skill':
+                        this.skillScore += amount;
+                        break;
+                    default:
+                        // 通用添加(僅用於測試)
+                        break;
+                }
+                
+                // 記錄分數變化以顯示動畫
+                this.scoreHistory.push({amount: newAmount, timestamp: Date.now()});
+                
+                // 更新分數顯示
+                this.updateScoreDisplay();
+                this.animateScoreChange(newAmount);
+            },
+            
+            // 扣分操作
+            deductScore(type, count = 1) {
+                let amount = 0;
+                
+                switch(type) {
+                    case 'skip':
+                        this.stats.skipCount += count;
+                        // 跳過不再扣分，但仍記錄統計數據
+                        break;
+                        
+                    case 'showAnswer':
+                        this.stats.showAnswerCount += count;
+                        // 顯示答案不再扣分，但仍記錄統計數據
+                        break;
+                        
+                    case 'hintLevel1':
+                        this.stats.hintLevel1Count += count;
+                        amount = count * 20; // 每次第一步提示扣20分
+                        this.penalties.hintLevel1 += amount;
+                        break;
+                        
+                    case 'hintLevel2':
+                        this.stats.hintLevel2Count += count;
+                        amount = count * 40; // 每次第二步提示扣40分
+                        this.penalties.hintLevel2 += amount;
+                        break;
+                }
+                
+                // 記錄分數變化以顯示動畫
+                if (amount > 0) {
+                    this.scoreHistory.push({amount: -amount, timestamp: Date.now()});
+                    this.animateScoreChange(-amount);
+                }
+                
+                // 更新分數顯示
+                this.updateScoreDisplay();
+            },
+            
+            // 更新最高連擊數
+            updateMaxCombo(combo) {
+                this.stats.maxCombo = Math.max(this.stats.maxCombo, combo);
+            },
+            
+            // 增加錯誤計數
+            addError() {
+                this.stats.errorCount++;
+            },
+            
+            // 計算練習完成後的最終分數
+            calculateFinalScore(totalItems, completedItems, timeSpent, isArticleMode) {
+                // 1. 計算基礎得分 (最高700分)
+                const baseScore = Math.round((completedItems / totalItems) * 700);
+                this.baseScore = baseScore;
+                
+                // 2. 計算時間得分 (最高200分)
+                const maxTime = totalItems * 8; // 每字8秒的標準時間
+                const timeRatio = Math.min(1, timeSpent / maxTime);
+                const timeScore = Math.round(200 * Math.pow(1 - timeRatio, 2));
+                this.timeScore = Math.max(30, timeScore); // 最低30分
+                
+                // 3. 計算技巧得分 (最高100分)
+                // 連擊獎勵: 每1連擊加5分，無上限
+                const comboScore = Math.min(100, this.stats.maxCombo * 5);
+                
+                // 不再有文章模式加成
+                this.skillScore = comboScore;
+                
+                return this.getTotalScore();
+            },
+            
+            // 獲取成績等級
+            getGradeLevel(score) {
+                if (score >= 950) return { grade: "神級", message: "拼音大師！無人能敵！" };
+                if (score >= 870) return { grade: "超級", message: "太厲害了！接近完美！" };
+                if (score >= 770) return { grade: "優秀", message: "表現非常出色！" };
+                if (score >= 670) return { grade: "良好", message: "掌握得不錯！" };
+                if (score >= 600) return { grade: "及格", message: "繼續努力！" };
+                return { grade: "待加强", message: "再練習一下吧！" };
+            },
+            
+            // 創建分數顯示元素
+            createScoreDisplay() {
+                const scoreDisplay = document.createElement('div');
+                scoreDisplay.id = 'score-display';
+                scoreDisplay.className = 'fixed top-4 right-4 p-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-50 transition-all duration-300 flex items-center';
+                scoreDisplay.innerHTML = `
+                    <div class="mr-2 text-primary dark:text-primary-light font-bold">分數：</div>
+                    <div id="current-score" class="text-2xl font-bold text-primary dark:text-primary-light">0</div>
+                    <div id="score-animation-container" class="absolute left-1/2 -translate-x-1/2 -top-8 w-full h-8 overflow-visible"></div>
+                `;
+                
+                // 先檢查是否已存在，避免重複添加
+                if (!document.getElementById('score-display')) {
+                    document.body.appendChild(scoreDisplay);
+                }
+                
+                // 初始隱藏
+                scoreDisplay.style.opacity = '0';
+                scoreDisplay.style.transform = 'translateY(-20px)';
+            },
+            
+            // 顯示分數顯示元素
+            showScoreDisplay() {
+                const scoreDisplay = document.getElementById('score-display');
+                if (scoreDisplay) {
+                    scoreDisplay.style.opacity = '1';
+                    scoreDisplay.style.transform = 'translateY(0)';
+                }
+            },
+            
+            // 隱藏分數顯示元素
+            hideScoreDisplay() {
+                const scoreDisplay = document.getElementById('score-display');
+                if (scoreDisplay) {
+                    scoreDisplay.style.opacity = '0';
+                    scoreDisplay.style.transform = 'translateY(-20px)';
+                }
+            },
+            
+            // 更新分數顯示
+            updateScoreDisplay() {
+                const scoreElement = document.getElementById('current-score');
+                if (scoreElement) {
+                    scoreElement.textContent = this.getTotalScore();
+                }
+            },
+            
+            // 分數變動動畫
+            animateScoreChange(amount) {
+                if (amount === 0) return;
+                
+                const container = document.getElementById('score-animation-container');
+                if (!container) return;
+                
+                const animation = document.createElement('div');
+                animation.className = 'absolute left-1/2 -translate-x-1/2 font-bold text-lg transition-all duration-500 opacity-0';
+                animation.textContent = amount > 0 ? `+${amount}` : `${amount}`;
+                animation.style.color = amount > 0 ? '#10B981' : '#EF4444';
+                animation.style.bottom = '0px';
+                
+                container.appendChild(animation);
+                
+                // 觸發動畫
+                setTimeout(() => {
+                    animation.style.opacity = '1';
+                    animation.style.bottom = '20px';
+                }, 10);
+                
+                // 移除動畫元素
+                setTimeout(() => {
+                    animation.style.opacity = '0';
+                    setTimeout(() => {
+                        container.removeChild(animation);
+                    }, 500);
+                }, 1000);
+            },
+            
+            // 生成詳細的分數報告HTML
+            generateScoreReport(totalItems, completedItems, timeSpent, isArticleMode) {
+                // 計算最終分數
+                const totalScore = this.calculateFinalScore(totalItems, completedItems, timeSpent, isArticleMode);
+                const grade = this.getGradeLevel(totalScore);
+                
+                // 格式化時間
+                const minutes = Math.floor(timeSpent / 60);
+                const seconds = Math.floor(timeSpent % 60);
+                const timeString = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                
+                // 平均速度
+                const avgSpeed = completedItems > 0 ? (timeSpent / completedItems).toFixed(1) : 0;
+                
+                // 計算各項詳細分數
+                const correctRate = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+                const comboScore = Math.min(100, this.stats.maxCombo * 5); // 每連擊5分，最高100分
+                
+                // 總扣分
+                const totalPenalties = this.penalties.hintLevel1 + this.penalties.hintLevel2;
+                
+                return `
+                <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-5 mb-6 score-report">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-xl font-bold text-gray-800 dark:text-gray-200">成績報告</h3>
+                        <div class="flex items-center">
+                            <div class="text-2xl font-bold ${grade.grade === "神級" ? 'text-purple-600 dark:text-purple-400' : 
+                                                           grade.grade === "超級" ? 'text-indigo-600 dark:text-indigo-400' :
+                                                           grade.grade === "優秀" ? 'text-green-600 dark:text-green-400' :
+                                                           grade.grade === "良好" ? 'text-blue-600 dark:text-blue-400' :
+                                                           grade.grade === "及格" ? 'text-yellow-600 dark:text-yellow-400' :
+                                                           'text-red-600 dark:text-red-400'}">${grade.grade}</div>
+                            <div class="ml-2 text-sm bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1">${grade.message}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="text-3xl font-bold text-primary dark:text-primary-light mb-4">
+                        ${totalScore} <span class="text-sm text-gray-500 dark:text-gray-400 font-normal">/ 1000分</span>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <!-- 基礎得分 -->
+                        <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <div class="flex justify-between mb-2">
+                                <div class="font-semibold">基礎得分</div>
+                                <div class="font-bold">${this.baseScore} <span class="text-xs text-gray-500 dark:text-gray-400">/ 700</span></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>正確率:</span>
+                                    <span>${correctRate}%</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>實際完成:</span>
+                                    <span>${completedItems}/${totalItems}字</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 時間得分 -->
+                        <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <div class="flex justify-between mb-2">
+                                <div class="font-semibold">時間得分</div>
+                                <div class="font-bold">${this.timeScore} <span class="text-xs text-gray-500 dark:text-gray-400">/ 200</span></div>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>用時:</span>
+                                    <span>${timeString}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span>平均速度:</span>
+                                    <span>${avgSpeed}秒/字</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 技巧得分 -->
+                        <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <div class="flex justify-between mb-2">
+                                <div class="font-semibold">技巧得分</div>
+                                <div class="font-bold">${this.skillScore} <span class="text-xs text-gray-500 dark:text-gray-400">/ 100</span></div>
+                            </div>
+                            <div class="grid grid-cols-1 gap-2 text-sm">
+                                <div class="flex justify-between">
+                                    <span>最高連擊:</span>
+                                    <span>${this.stats.maxCombo} (${comboScore}分)</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 扣分項目 -->
+                        ${totalPenalties > 0 ? `
+                        <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <div class="flex justify-between mb-2">
+                                <div class="font-semibold">扣分項目</div>
+                                <div class="font-bold text-red-600 dark:text-red-400">-${totalPenalties}分</div>
+                            </div>
+                            <div class="grid grid-cols-1 gap-2 text-sm">
+                                ${this.penalties.hintLevel1 > 0 ? `
+                                <div class="flex justify-between">
+                                    <span>提示聲母:</span>
+                                    <span>${this.stats.hintLevel1Count}次 (-${this.penalties.hintLevel1}分)</span>
+                                </div>` : ''}
+                                
+                                ${this.penalties.hintLevel2 > 0 ? `
+                                <div class="flex justify-between">
+                                    <span>提示聲母韻母:</span>
+                                    <span>${this.stats.hintLevel2Count}次 (-${this.penalties.hintLevel2}分)</span>
+                                </div>` : ''}
+                            </div>
+                        </div>` : ''}
+                    </div>
+                </div>`;
+            }
+        };
+        
         // 核心模組: 資料管理
         const DataManager = {
             // 檢查是否已經成功加載 Pinyin Pro
@@ -986,6 +1405,79 @@
                 setTimeout(() => {
                     this.checkPinyinProAvailability();
                 }, 500);
+            },
+            
+            // 將拼音分解為聲母、韻母和聲調
+            decomposePinyin(fullPinyin) {
+                if (!fullPinyin) return { initial: '', final: '', tone: 5, original: '' };
+                
+                // 預先提取原始帶調拼音，用於後續分析
+                const originalPinyin = fullPinyin;
+                
+                // 1. 聲調提取與基本拼音獲取
+                let tone = 0;
+                let basePinyin = '';
+                let markedVowel = '';
+                
+                // 檢測哪個元音帶有聲調
+                if (fullPinyin.match(/[āáǎà]/)) { markedVowel = 'a'; tone = this.getToneNumber(fullPinyin, 'a'); }
+                else if (fullPinyin.match(/[ēéěè]/)) { markedVowel = 'e'; tone = this.getToneNumber(fullPinyin, 'e'); }
+                else if (fullPinyin.match(/[īíǐì]/)) { markedVowel = 'i'; tone = this.getToneNumber(fullPinyin, 'i'); }
+                else if (fullPinyin.match(/[ōóǒò]/)) { markedVowel = 'o'; tone = this.getToneNumber(fullPinyin, 'o'); }
+                else if (fullPinyin.match(/[ūúǔù]/)) { markedVowel = 'u'; tone = this.getToneNumber(fullPinyin, 'u'); }
+                else if (fullPinyin.match(/[ǖǘǚǜ]/)) { markedVowel = 'ü'; tone = this.getToneNumber(fullPinyin, 'ü'); }
+                else tone = 5; // 輕聲
+                
+                // 移除所有聲調符號
+                basePinyin = fullPinyin
+                    .replace(/[āáǎà]/g, 'a')
+                    .replace(/[ēéěè]/g, 'e')
+                    .replace(/[īíǐì]/g, 'i')
+                    .replace(/[ōóǒò]/g, 'o')
+                    .replace(/[ūúǔù]/g, 'u')
+                    .replace(/[ǖǘǚǜ]/g, 'ü');
+                
+                // 2. 分離聲母和韻母
+                const initials = ['zh', 'ch', 'sh', 'b', 'p', 'm', 'f', 'd', 't', 'n', 'l', 'g', 'k', 'h', 'j', 'q', 'x', 'r', 'z', 'c', 's', 'y', 'w'];
+                
+                let initial = '';
+                let final = basePinyin;
+                
+                // 匹配聲母
+                for (let i of initials) {
+                    if (basePinyin.startsWith(i)) {
+                        initial = i;
+                        final = basePinyin.slice(i.length);
+                        break;
+                    }
+                }
+                
+                // 3. 特殊韻母處理與驗證
+                if ((final === 'iu' && markedVowel !== 'u') || 
+                    (final === 'ui' && markedVowel !== 'i')) {
+                    console.warn(`提醒：拼音「${originalPinyin}」的聲調標記可能不正確。
+                                在 'iu' 中應標在 'u' 上；在 'ui' 中應標在 'i' 上`);
+                }
+                
+                return {
+                    initial,   // 聲母
+                    final,     // 韻母
+                    tone,      // 聲調 (1-5)
+                    original: originalPinyin // 保存原始拼音
+                };
+            },
+            
+            // 輔助函數：根據帶聲調元音獲取聲調號碼
+            getToneNumber(pinyin, vowel) {
+                switch(vowel) {
+                    case 'a': return pinyin.includes('ā') ? 1 : pinyin.includes('á') ? 2 : pinyin.includes('ǎ') ? 3 : 4;
+                    case 'e': return pinyin.includes('ē') ? 1 : pinyin.includes('é') ? 2 : pinyin.includes('ě') ? 3 : 4;
+                    case 'i': return pinyin.includes('ī') ? 1 : pinyin.includes('í') ? 2 : pinyin.includes('ǐ') ? 3 : 4;
+                    case 'o': return pinyin.includes('ō') ? 1 : pinyin.includes('ó') ? 2 : pinyin.includes('ǒ') ? 3 : 4;
+                    case 'u': return pinyin.includes('ū') ? 1 : pinyin.includes('ú') ? 2 : pinyin.includes('ǔ') ? 3 : 4;
+                    case 'ü': return pinyin.includes('ǖ') ? 1 : pinyin.includes('ǘ') ? 2 : pinyin.includes('ǚ') ? 3 : 4;
+                    default: return 5;
+                }
             },
             
             // 檢查 Pinyin Pro 可用性
@@ -1441,12 +1933,18 @@
                 // 追踪第一個漢字的容器引用
                 let firstCharContainer = null;
                 
+                const wordIndex = GameLogic.currentWordIndex; // 記錄當前詞彙索引
+                
                 wordData.characters.forEach((char, index) => {
                     if (!DataManager.isChineseCharacter(char)) return; // 跳過非漢字
                     
                     // 創建字符容器
                     const charContainer = document.createElement('div');
                     charContainer.className = 'char-container';
+                    
+                    // 添加詞彙索引和字符索引屬性，用於跳過邏輯
+                    charContainer.dataset.wordIndex = wordIndex;
+                    charContainer.dataset.charIndex = index;
                     
                     // 如果這是第一個漢字，保存引用
                     if (firstCharContainer === null) {
@@ -1725,6 +2223,12 @@
                 
                 if (!userInput) return; // 如果輸入為空，不做處理
                 
+                // 獲取或初始化錯誤計數
+                const charContainer = input.closest('.char-container');
+                if (!charContainer.dataset.errorCount) {
+                    charContainer.dataset.errorCount = '0';
+                }
+                
                 // 檢查拼音
                 const isCorrect = DataManager.checkPinyin(char, userInput, GameLogic.requireTones);
                 
@@ -1736,7 +2240,6 @@
                     GameLogic.currentWord.pinyins[index] = userInput;
                     
                     // 標記字符容器為完成
-                    const charContainer = input.closest('.char-container');
                     if (charContainer) {
                         charContainer.classList.add('completed');
                         
@@ -1748,6 +2251,20 @@
                         
                         // 增加連擊數
                         ComboManager.increment();
+                        
+                        // 增加基礎得分 (每字的基礎得分取決於總漢字數)
+                        // 計算詞彙模式中所有漢字數
+                        const totalChars = GameLogic.calculateTotalChineseChars();
+                        if (totalChars > 0) {
+                            const pointsPerChar = 700 / totalChars; // 基礎分700分平均分配
+                            ScoreManager.addScore(Math.round(pointsPerChar), 'base');
+                        }
+                        
+                        // 重置錯誤計數
+                        charContainer.dataset.errorCount = '0';
+                        
+                        // 更新進度 - 在每次正確輸入後更新進度條
+                        this.updateProgress();
                         
                         // 連續輸入模式 - 自動跳到下一個字符
                         if (GameLogic.continuousMode) {
@@ -1770,21 +2287,123 @@
                     // 檢查是否所有輸入都正確
                     this.checkAllVocabularyInputs();
                 } else {
-                    input.classList.add("incorrect");
-                    input.classList.remove("correct");
+                    // 增加錯誤計數
+                    let errorCount = parseInt(charContainer.dataset.errorCount) || 0;
+                    errorCount++;
+                    charContainer.dataset.errorCount = errorCount.toString();
                     
-                    // 添加錯誤震動反饋
-                    this.showIncorrectFeedback(input.closest('.char-container'));
-                    
-                    // 播放錯誤音效
-                    SoundManager.playIncorrectSound();
-                    
-                    // 錯誤後自動清空輸入框
-                    setTimeout(() => {
-                        input.value = '';
-                        input.focus();
-                        input.classList.remove("incorrect");
-                    }, 300); // 等待一小段時間後清空，讓用戶有時間看到錯誤反饋
+                    // 獲取字符的標準拼音以進行分解
+                    const standardPinyin = DataManager.getStandardPinyin(char, GameLogic.requireTones);
+                    if (standardPinyin) {
+                        const pinyinParts = DataManager.decomposePinyin(standardPinyin);
+                        
+                        if (errorCount === 1) {
+                            // 第一次錯誤：顯示聲母提示
+                            input.classList.add("incorrect");
+                            input.classList.remove("correct");
+                            
+                            // 添加錯誤震動反饋
+                            this.showIncorrectFeedback(charContainer);
+                            
+                            // 播放錯誤音效
+                            SoundManager.playIncorrectSound();
+                            
+                            // 等待一小段時間後提供聲母提示
+                            setTimeout(() => {
+                                // 提供聲母提示並設置為不可刪除
+                                input.value = pinyinParts.initial;
+                                input.dataset.hint = pinyinParts.initial; // 存儲提示內容
+                                input.dataset.hintType = "initial"; // 標記提示類型
+                                input.focus();
+                                input.classList.remove("incorrect");
+                                input.classList.add("has-hint"); // 添加提示標記
+                                
+                                // 將光標移到提示後面
+                                this.setCaretPositionToEnd(input);
+                                
+                                // 記錄一級提示扣分 - 新增
+                                ScoreManager.deductScore('hintLevel1', 1);
+                                
+                                // 顯示提示信息
+                                UIManager.showFeedback(`提示：「${char}」的聲母為「${pinyinParts.initial}」，請繼續輸入韻母和聲調`, 'info');
+                                
+                                // 為輸入框添加防刪除提示的事件監聽器
+                                this.addProtectedInputListener(input);
+                            }, 300);
+                            
+                        } else if (errorCount === 2) {
+                            // 第二次錯誤：顯示聲母和韻母 (不帶聲調)
+                            input.classList.add("incorrect");
+                            input.classList.remove("correct");
+                            
+                            // 添加錯誤震動反饋
+                            this.showIncorrectFeedback(charContainer);
+                            
+                            // 播放錯誤音效
+                            SoundManager.playIncorrectSound();
+                            
+                            // 等待一小段時間後提供聲母+韻母提示
+                            setTimeout(() => {
+                                const baseForm = pinyinParts.initial + pinyinParts.final;
+                                // 提供拼音基本形式(不含聲調)提示並設置為不可刪除
+                                input.value = baseForm;
+                                input.dataset.hint = baseForm; // 更新提示內容
+                                input.dataset.hintType = "base"; // 更新提示類型
+                                input.focus();
+                                input.classList.remove("incorrect");
+                                input.classList.add("has-hint"); // 添加提示標記
+                                
+                                // 將光標移到提示後面
+                                this.setCaretPositionToEnd(input);
+                                
+                                // 記錄二級提示扣分 - 新增
+                                ScoreManager.deductScore('hintLevel2', 1);
+                                
+                                // 顯示提示信息
+                                UIManager.showFeedback(`提示：「${char}」的拼音為「${baseForm}」，請選擇正確的聲調`, 'info');
+                                
+                                // 為輸入框添加防刪除提示的事件監聽器
+                                this.addProtectedInputListener(input);
+                            }, 300);
+                            
+                        } else {
+                            // 第三次錯誤：跳過此字自動進入下一個字
+                            charContainer.classList.add('skipped');
+                            
+                            UIManager.showFeedback(`已達到最大嘗試次數，「${char}」的正確拼音是「${standardPinyin}」，已跳過此字`, 'error');
+                            
+                            // 自動跳到下一個字符
+                            setTimeout(() => {
+                                // 獲取所有字符容器
+                                const allChars = Array.from(document.querySelectorAll('.char-container'));
+                                const currentIndex = allChars.indexOf(charContainer);
+                                
+                                // 找到下一個未完成的字符
+                                const nextChar = this.findNextIncompleteChar(currentIndex, allChars);
+                                
+                                if (nextChar) {
+                                    nextChar.querySelector('.char-display').click();
+                                }
+                            }, 1500);
+                        }
+                    } else {
+                        // 如果無法獲取標準拼音，則使用普通錯誤處理邏輯
+                        input.classList.add("incorrect");
+                        input.classList.remove("correct");
+                        
+                        // 添加錯誤震動反饋
+                        this.showIncorrectFeedback(charContainer);
+                        
+                        // 播放錯誤音效
+                        SoundManager.playIncorrectSound();
+                        
+                        // 錯誤後自動清空輸入框
+                        setTimeout(() => {
+                            input.value = '';
+                            input.focus();
+                            input.classList.remove("incorrect");
+                        }, 300);
+                    }
                     
                     // 重置連擊數
                     ComboManager.reset();
@@ -1828,6 +2447,65 @@
                 }, 500);
             },
             
+            // 設置輸入框光標位置到最後面
+            setCaretPositionToEnd(input) {
+                if (input) {
+                    input.focus();
+                    input.selectionStart = input.selectionEnd = input.value.length;
+                }
+            },
+            
+            // 為輸入框添加防刪除提示的事件監聽器
+            addProtectedInputListener(input) {
+                if (!input) return;
+                
+                // 移除任何現有的同類監聽器，避免重複
+                input.removeEventListener('keydown', this.protectedInputHandler);
+                
+                // 創建一個帶有閉包的處理函數，以便可以訪問input的dataset
+                this.protectedInputHandler = (e) => {
+                    // 獲取現有提示
+                    const hint = input.dataset.hint || '';
+                    
+                    // 如果是Backspace鍵並且可能會刪除提示內容
+                    if ((e.key === 'Backspace' || e.key === 'Delete') && 
+                        (input.selectionStart <= hint.length || 
+                         (input.selectionStart === input.selectionEnd && input.selectionStart <= hint.length))) {
+                        // 阻止默認行為
+                        e.preventDefault();
+                        
+                        // 視覺反饋
+                        input.classList.add('protected-hint');
+                        setTimeout(() => {
+                            input.classList.remove('protected-hint');
+                        }, 300);
+                        
+                        // 如果選中了部分內容，則僅保留選擇範圍之外的部分
+                        if (input.selectionStart !== input.selectionEnd) {
+                            // 如果選擇範圍完全在提示之外，則允許刪除
+                            if (input.selectionStart >= hint.length) {
+                                // 不阻止，讓默認行為進行
+                                return true;
+                            }
+                            
+                            // 如果選擇跨越了提示邊界，只保留提示和提示之後的部分
+                            if (input.selectionEnd > hint.length) {
+                                const textAfterHint = input.value.substring(input.selectionEnd);
+                                input.value = hint + textAfterHint;
+                                this.setCaretPositionToEnd(input, hint.length);
+                            } else {
+                                // 重置輸入值以保護提示
+                                input.value = hint;
+                                this.setCaretPositionToEnd(input);
+                            }
+                        }
+                    }
+                };
+                
+                // 添加事件監聽器
+                input.addEventListener('keydown', this.protectedInputHandler);
+            },
+            
             // 檢查所有詞彙輸入是否正確
             checkAllVocabularyInputs() {
                 const inputs = this.practiceViews.pinyinInputs.querySelectorAll('.pinyin-input');
@@ -1840,6 +2518,9 @@
                 });
                 
                 if (allCorrect && inputs.length > 0) {
+                    // 更新進度 - 在跳到下一詞前更新進度
+                    this.updateProgress();
+                    
                     // 全部正確，自動跳至下一詞
                     this.showFeedback('太棒了！全部正確！', 'success');
                     
@@ -1858,10 +2539,14 @@
                 
                 if (!userInput) return; // 如果輸入為空，不做處理
                 
+                // 獲取或初始化錯誤計數
+                const charSpan = document.querySelector(`.article-char[data-index="${index}"]`);
+                if (!charSpan.dataset.errorCount) {
+                    charSpan.dataset.errorCount = '0';
+                }
+                
                 // 檢查拼音
                 const isCorrect = DataManager.checkPinyin(char, userInput, GameLogic.requireTones);
-                
-                const charSpan = document.querySelector(`.article-char[data-index="${index}"]`);
                 
                 if (isCorrect) {
                     input.classList.add("correct");
@@ -1876,6 +2561,18 @@
                     
                     // 增加連擊數
                     ComboManager.increment();
+                    
+                    // 增加基礎得分 (文章模式)
+                    const totalChars = Array.from(GameLogic.currentArticle.content).filter(c => 
+                        DataManager.isChineseCharacter(c)
+                    ).length;
+                    if (totalChars > 0) {
+                        const pointsPerChar = 700 / totalChars; // 基礎分700分平均分配
+                        ScoreManager.addScore(Math.round(pointsPerChar), 'base');
+                    }
+                    
+                    // 重置錯誤計數
+                    charSpan.dataset.errorCount = '0';
                     
                     // 更新拼音數據
                     GameLogic.currentArticle.pinyins[index] = userInput;
@@ -1892,22 +2589,123 @@
                         this.checkAllArticleInputs();
                     }
                 } else {
-                    input.classList.add("incorrect");
-                    input.classList.remove("correct");
-                    charSpan.classList.remove('completed');
+                    // 增加錯誤計數
+                    let errorCount = parseInt(charSpan.dataset.errorCount) || 0;
+                    errorCount++;
+                    charSpan.dataset.errorCount = errorCount.toString();
                     
-                    // 添加錯誤震動反饋
-                    this.showIncorrectFeedback(charSpan);
-                    
-                    // 播放錯誤音效
-                    SoundManager.playIncorrectSound();
-                    
-                    // 錯誤後自動清空輸入框
-                    setTimeout(() => {
-                        input.value = '';
-                        input.focus();
-                        input.classList.remove("incorrect");
-                    }, 300); // 等待一小段時間後清空，讓用戶有時間看到錯誤反饋
+                    // 獲取字符的標準拼音以進行分解
+                    const standardPinyin = DataManager.getStandardPinyin(char, GameLogic.requireTones);
+                    if (standardPinyin) {
+                        const pinyinParts = DataManager.decomposePinyin(standardPinyin);
+                        
+                        if (errorCount === 1) {
+                            // 第一次錯誤：顯示聲母提示
+                            input.classList.add("incorrect");
+                            input.classList.remove("correct");
+                            charSpan.classList.remove('completed');
+                            
+                            // 添加錯誤震動反饋
+                            this.showIncorrectFeedback(charSpan);
+                            
+                            // 播放錯誤音效
+                            SoundManager.playIncorrectSound();
+                            
+                            // 等待一小段時間後提供聲母提示
+                            setTimeout(() => {
+                                // 提供聲母提示並設置為不可刪除
+                                input.value = pinyinParts.initial;
+                                input.dataset.hint = pinyinParts.initial; // 存儲提示內容
+                                input.dataset.hintType = "initial"; // 標記提示類型
+                                input.focus();
+                                input.classList.remove("incorrect");
+                                input.classList.add("has-hint"); // 添加提示標記
+                                
+                                // 將光標移到提示後面
+                                this.setCaretPositionToEnd(input);
+                                
+                                // 顯示提示信息
+                                UIManager.showFeedback(`提示：「${char}」的聲母為「${pinyinParts.initial}」，請繼續輸入韻母和聲調`, 'info');
+                                
+                                // 為輸入框添加防刪除提示的事件監聽器
+                                this.addProtectedInputListener(input);
+                            }, 300);
+                            
+                        } else if (errorCount === 2) {
+                            // 第二次錯誤：顯示聲母和韻母 (不帶聲調)
+                            input.classList.add("incorrect");
+                            input.classList.remove("correct");
+                            charSpan.classList.remove('completed');
+                            
+                            // 添加錯誤震動反饋
+                            this.showIncorrectFeedback(charSpan);
+                            
+                            // 播放錯誤音效
+                            SoundManager.playIncorrectSound();
+                            
+                            // 等待一小段時間後提供聲母+韻母提示
+                            setTimeout(() => {
+                                const baseForm = pinyinParts.initial + pinyinParts.final;
+                                // 提供拼音基本形式(不含聲調)提示並設置為不可刪除
+                                input.value = baseForm;
+                                input.dataset.hint = baseForm; // 更新提示內容
+                                input.dataset.hintType = "base"; // 更新提示類型
+                                input.focus();
+                                input.classList.remove("incorrect");
+                                input.classList.add("has-hint"); // 添加提示標記
+                                
+                                // 將光標移到提示後面
+                                this.setCaretPositionToEnd(input);
+                                
+                                // 顯示提示信息
+                                UIManager.showFeedback(`提示：「${char}」的拼音為「${baseForm}」，請選擇正確的聲調`, 'info');
+                                
+                                // 為輸入框添加防刪除提示的事件監聽器
+                                this.addProtectedInputListener(input);
+                            }, 300);
+                            
+                        } else {
+                            // 第三次錯誤：跳過此字自動進入下一個字
+                            charSpan.classList.add('skipped');
+                            charSpan.classList.add('completed');
+                            
+                            UIManager.showFeedback(`已達到最大嘗試次數，「${char}」的正確拼音是「${standardPinyin}」，已跳過此字`, 'error');
+                            
+                            // 記錄跳過的字符
+                            GameLogic.currentArticle.skippedChars[index] = true;
+                            GameLogic.skippedCount++;
+                            
+                            // 找到下一個漢字並聚焦
+                            const nextChar = this.findNextChineseChar(index);
+                            if (nextChar) {
+                                // 延遲一下讓用戶看到正確反饋
+                                setTimeout(() => {
+                                    nextChar.click();
+                                }, 1500);
+                            } else {
+                                // 沒有下一個漢字，檢查是否完成所有
+                                this.checkAllArticleInputs();
+                            }
+                        }
+                    } else {
+                        // 如果無法獲取標準拼音，則使用普通錯誤處理邏輯
+                        input.classList.add("incorrect");
+                        input.classList.remove("correct");
+                        charSpan.classList.remove('completed');
+                        
+                        // 添加錯誤震動反饋
+                        this.showIncorrectFeedback(charSpan);
+                        
+                        // 播放錯誤音效
+                        SoundManager.playIncorrectSound();
+                        
+                        // 錯誤後自動清空輸入框
+                        setTimeout(() => {
+                            input.value = '';
+                            input.focus();
+                            input.classList.remove("incorrect");
+                        }, 300); // 等待一小段時間後清空，讓用戶有時間看到錯誤反饋
+                    }
                     
                     // 重置連擊數
                     ComboManager.reset();
@@ -2015,9 +2813,39 @@
                 let completedItems = 0;
                 
                 if (GameLogic.mode === 'vocabulary') {
-                    // 詞彙模式: 計算已完成的詞彙數
-                    totalItems = GameLogic.vocabularyList.length;
-                    completedItems = GameLogic.currentWordIndex;
+                    // 詞彙模式: 計算已完成的漢字數而非詞彙數
+                    totalItems = 0;
+                    completedItems = 0;
+                    
+                    // 計算總漢字數
+                    GameLogic.vocabularyList.forEach(word => {
+                        word.characters.forEach(char => {
+                            if (DataManager.isChineseCharacter(char)) {
+                                totalItems++;
+                            }
+                        });
+                    });
+                    
+                    // 計算已完成漢字數
+                    // 當前詞彙之前的所有詞彙
+                    for (let i = 0; i < GameLogic.currentWordIndex; i++) {
+                        const word = GameLogic.vocabularyList[i];
+                        word.characters.forEach(char => {
+                            if (DataManager.isChineseCharacter(char)) {
+                                completedItems++;
+                            }
+                        });
+                    }
+                    
+                    // 當前詞彙的已完成字符
+                    if (GameLogic.currentWord) {
+                        const containers = document.querySelectorAll('.char-container');
+                        containers.forEach(container => {
+                            if (container.classList.contains('completed')) {
+                                completedItems++;
+                            }
+                        });
+                    }
                 } else {
                     // 文章模式: 計算已完成的漢字數
                     const charSpans = this.practiceViews.articleDisplay.querySelectorAll('.article-char');
@@ -2377,6 +3205,9 @@
                 // 更新連擊計數器的等級樣式
                 this.updateComboLevel();
                 
+                // 更新 ScoreManager 的最高連擊數
+                ScoreManager.updateMaxCombo(this.count);
+                
                 // 播放連擊音效
                 const comboLevel = this.getComboLevel();
                 if (comboLevel > 0) {
@@ -2695,6 +3526,10 @@
                 this.vocabularyHints = {};
                 this.articleHints = {};
                 
+                // 重置計分系統
+                ScoreManager.reset();
+                ScoreManager.showScoreDisplay();
+                
                 // 先記錄開始時間，確保計時正確
                 this.startTime = Date.now();
                 console.log('設置開始時間: ' + this.startTime);
@@ -2785,9 +3620,13 @@
             skipCurrentItem() {
                 if (this.mode === 'vocabulary') {
                     UIManager.skipCurrentVocabulary();
+                    // 記錄跳過並扣分
+                    ScoreManager.deductScore('skip');
                 } else {
                     UIManager.skipCurrentArticleChar();
                     this.skippedCount++;
+                    // 記錄跳過並扣分
+                    ScoreManager.deductScore('skip');
                 }
             },
             
@@ -2800,6 +3639,9 @@
             
             // 顯示正確答案
             showAnswer() {
+                // 記錄扣分
+                ScoreManager.deductScore('showAnswer');
+                
                 if (this.mode === 'vocabulary') {
                     // 詞彙模式: 獲取當前激活的字符
                     const activeChar = document.querySelector('.char-container.active-char');
@@ -2959,11 +3801,31 @@
                     let totalCharCount = 0;
                     let validCompleteCount = 0;
                     let hintCharCount = 0;
+                    let skippedCharCount = 0;
                     
                     this.vocabularyList.forEach((word, wordIndex) => {
                         word.characters.forEach((char, charIndex) => {
                             if (DataManager.isChineseCharacter(char)) {
                                 totalCharCount++; // 增加總字符數
+                                
+                                // 檢查該字符是否在被跳過的詞彙中
+                                if (word.skipped) {
+                                    skippedCharCount++;
+                                    return; // 跳過詞彙的字符不計入完成數
+                                }
+                                
+                                // 檢查是否有對應的字符容器被標記為跳過
+                                // 注意：這個檢查只在完成屏幕計算分數時有效，不是運行時檢查
+                                try {
+                                    const containerSelector = `.char-container[data-word-index="${wordIndex}"][data-char-index="${charIndex}"]`;
+                                    const container = document.querySelector(containerSelector);
+                                    if (container && container.classList.contains('skipped')) {
+                                        skippedCharCount++;
+                                        return; // 被標記為跳過的字符不計入完成數
+                                    }
+                                } catch (e) {
+                                    console.log("沒有找到對應的容器，可能是DOM已經被刷新", e);
+                                }
                                 
                                 // 檢查是否使用了提示
                                 const isHint = this.vocabularyHints[wordIndex] && 
@@ -2972,7 +3834,7 @@
                                 if (isHint) {
                                     hintCharCount++; // 增加提示字符數
                                 } else if (word.pinyins[charIndex]) {
-                                    // 只要有拼音輸入且非提示，就算作完成（不考慮整個詞是否被跳過）
+                                    // 只有在有拼音輸入、非提示、且詞彙未被跳過的情況下才算作有效完成
                                     validCompleteCount++; // 增加有效完成數
                                 }
                             }
@@ -3008,13 +3870,50 @@
                     actualCompletedItems = validCompleteCount;
                 }
                 
+                // 計算最終分數
+                const totalScore = ScoreManager.calculateFinalScore(
+                    totalItems,
+                    actualCompletedItems,
+                    timeSpent,
+                    this.mode === 'article'
+                );
+                
+                // 生成分數報告HTML
+                const scoreReportHTML = ScoreManager.generateScoreReport(
+                    totalItems,
+                    actualCompletedItems,
+                    timeSpent,
+                    this.mode === 'article'
+                );
+                
+                // 先移除已存在的成績報告，避免重複顯示
+                const existingReport = document.getElementById('score-report-container');
+                if (existingReport) {
+                    existingReport.remove();
+                }
+                
+                // 將分數報告添加到完成頁面
+                const statsDisplay = document.getElementById('stats-display');
+                const scoreReportContainer = document.createElement('div');
+                scoreReportContainer.id = 'score-report-container';
+                scoreReportContainer.innerHTML = scoreReportHTML;
+                
+                // 插入到統計信息之前
+                if (statsDisplay && statsDisplay.parentNode) {
+                    statsDisplay.parentNode.insertBefore(scoreReportContainer, statsDisplay);
+                }
+                
+                // 隱藏分數顯示面板
+                ScoreManager.hideScoreDisplay();
+                
                 // 顯示完成畫面
                 UIManager.showCompletion({
                     totalItems,
                     timeSpent,
                     skippedCount: this.skippedCount,
                     hintCount: this.hintCount,
-                    actualCompletedItems
+                    actualCompletedItems,
+                    totalScore  // 添加總分
                 });
             },
             
@@ -3164,12 +4063,12 @@
         
         // 預設輸入內容
         function setDefaultContent() {
-            // 詞彙模式預設內容
-            const defaultVocabulary = "寒夜,北風,呼呼,哆嗦,哀叫";
+            // 詞彙模式預設內容 - 請在這裡修改預設詞彙
+            const defaultVocabulary = "肯定\n認識\n温馨\n新聞\n問卷\n未必\n萬分\n希望\n上網\n校務處\n夜間\n微不足道";
             document.getElementById('vocabulary-text').value = defaultVocabulary;
             
-            // 文章模式預設內容
-            const defaultArticle = "天剛亮，喜鵲去找烏鴉，發現烏鴉已經凍僵了。";
+            // 文章模式預設內容 - 請在這裡修改預設文章
+            const defaultArticle = "區老闆已經經營這個旅館二十年了。\n小敏雖然矮小，但是個游泳好手。\n他請你寫一篇演講稿。";
             document.getElementById('article-text').value = defaultArticle;
         }
         
@@ -3177,6 +4076,27 @@
         window.addEventListener('DOMContentLoaded', function() {
             setDefaultContent();
         });
+        
+        // 計算詞彙模式中所有漢字的總數
+        GameLogic.calculateTotalChineseChars = function() {
+            let totalCount = 0;
+            
+            // 如果是詞彙模式，計算所有詞彙中漢字的總數
+            if (this.mode === 'vocabulary' && this.vocabularyList.length > 0) {
+                this.vocabularyList.forEach(word => {
+                    word.characters.forEach(char => {
+                        if (DataManager.isChineseCharacter(char)) {
+                            totalCount++;
+                        }
+                    });
+                });
+            }
+            
+            return totalCount;
+        };
+        
+        // 初始化計分系統
+        ScoreManager.init();
         
         // 初始化遊戲
         GameLogic.init();
